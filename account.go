@@ -24,12 +24,15 @@ func (c *Client) GetCurrentUser(ctx context.Context) (*User, error) {
 	return &user, nil
 }
 
-// Balance returns the account's current credit balance in USD. The forge's
+// Balance returns the account's spendable funds in USD: prepaid balance plus
+// deposited/awarded credit. Live fact (2026-07): credit-only accounts
+// (billing_creditonly) carry ALL funds in `credit` with `balance` pinned at
+// 0 — returning `balance` alone reads $0.00 on a funded account. The forge's
 // spend guardrails poll this before opening a session.
 func (c *Client) Balance(ctx context.Context) (float64, error) {
 	user, err := c.GetCurrentUser(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return user.Balance, nil
+	return user.Balance + user.Credit, nil
 }
