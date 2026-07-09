@@ -1,0 +1,29 @@
+{
+  "instances": {
+    "id": 12345678,
+    "machine_id": 28143,
+    "host_id": 108771,
+    "actual_status": "running",
+    "intended_status": "running",
+    "cur_state": "running",
+    "next_state": "running",
+    "status_msg": "success",
+    "label": "forge-session-42",
+    "image_uuid": "ghcr.io/cozy-creator/cell-producer:0.3.1",
+    "gpu_name": "RTX 3090",
+    "num_gpus": 1,
+    "gpu_ram": 24576.0,
+    "gpu_util": 97.2,
+    "dph_total": 0.089,
+    "dph_base": 0.089,
+    "storage_cost": 0.12,
+    "disk_space": 32.0,
+    "public_ipaddr": "185.62.108.11",
+    "ssh_host": "ssh4.vast.ai",
+    "ssh_port": 21506,
+    "inet_up_cost": 0.005,
+    "inet_down_cost": 0.005,
+    "start_date": 1783562011.4821,
+    "geolocation": "Poland, PL"
+  }
+}
