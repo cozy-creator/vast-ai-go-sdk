@@ -22,7 +22,7 @@ func TestRetryOn429HonorsRetryAfter(t *testing.T) {
 			fmt.Fprint(w, `{"error": "rate_limited"}`)
 			return
 		}
-		fmt.Fprint(w, `{"id": 1, "email": "x@y.z", "balance": 48.5}`)
+		fmt.Fprint(w, `{"id": 1, "email": "x@y.z", "balance": 20.0, "credit": 28.5}`)
 	})
 	c := ts.client(t)
 
@@ -31,7 +31,7 @@ func TestRetryOn429HonorsRetryAfter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
-	if balance != 48.5 || attempts != 2 {
+	if balance != 48.5 || attempts != 2 { // 20.0 balance + 28.5 credit
 		t.Errorf("balance=%v attempts=%d", balance, attempts)
 	}
 	if elapsed := time.Since(start); elapsed < time.Second {
