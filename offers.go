@@ -45,12 +45,24 @@ type Offer struct {
 
 	// Reliability is the host uptime score in [0,1].
 	Reliability float64 `json:"reliability2"`
+	// Verification is vast's raw host-verification state ("verified",
+	// "unverified", "deverified"). Live fact (2026-07): offer rows carry
+	// this string — there is NO boolean `verified` key in responses (the
+	// boolean exists only as a server-side FILTER name).
+	Verification string `json:"verification"`
 	// Verified means the machine passed vast's automated verification
-	// (CUDA >= 12, >= 90% reliability).
-	Verified bool `json:"verified"`
+	// (CUDA >= 12, >= 90% reliability). Derived from Verification by
+	// SearchOffers — not a wire field.
+	Verified bool `json:"-"`
+	// HostingType is vast's raw hosting class (0 = residential/individual,
+	// 1 = datacenter). Like Verification, the wire has no `datacenter`
+	// boolean on offer rows — only the filter name.
+	HostingType int `json:"hosting_type"`
 	// Datacenter is true for hosted datacenter machines (consumer cards are
-	// overwhelmingly non-datacenter boxes).
-	Datacenter bool   `json:"datacenter"`
+	// overwhelmingly non-datacenter boxes). Derived from HostingType by
+	// SearchOffers — not a wire field. NOTE: datacenter alone does NOT
+	// imply verified — dc hosts can be "deverified"; filter on both.
+	Datacenter bool   `json:"-"`
 	Hostname   string `json:"hostname"`
 
 	CUDAMaxGood   float64 `json:"cuda_max_good"` // max CUDA version the driver supports
@@ -236,6 +248,10 @@ func (c *Client) SearchOffers(ctx context.Context, filter *OfferFilter) ([]Offer
 	// POST here is semantically a read: idempotent, retried on 5xx.
 	if err := c.do(ctx, http.MethodPost, "/api/v0/bundles/", q, &resp, true); err != nil {
 		return nil, err
+	}
+	for i := range resp.Offers {
+		resp.Offers[i].Verified = resp.Offers[i].Verification == "verified"
+		resp.Offers[i].Datacenter = resp.Offers[i].HostingType == 1
 	}
 	return resp.Offers, nil
 }
