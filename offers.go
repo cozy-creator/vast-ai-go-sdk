@@ -123,6 +123,13 @@ type OfferFilter struct {
 	MinInetUpMbps   float64
 	// MinComputeCap requires SM capability x10 >= this (86, 89, 120).
 	MinComputeCap int
+	// MinCPUCores requires at least this many EFFECTIVE vCPUs allocated to
+	// the rental (wire field cpu_cores_effective — the slice this offer
+	// actually gets, not the whole machine).
+	MinCPUCores float64
+	// MinCPURAMGB requires at least this much host RAM in GB (wire field
+	// cpu_ram is MB; the SDK converts).
+	MinCPURAMGB float64
 	// Geolocation restricts to two-letter country codes (e.g. "US", "DE").
 	Geolocation []string
 	// Type is the pricing model: OfferTypeOnDemand (default), OfferTypeBid,
@@ -191,6 +198,12 @@ func (f *OfferFilter) buildQuery() (map[string]interface{}, error) {
 	}
 	if f.MinComputeCap > 0 {
 		q["compute_cap"] = map[string]interface{}{"gte": f.MinComputeCap}
+	}
+	if f.MinCPUCores > 0 {
+		q["cpu_cores_effective"] = map[string]interface{}{"gte": f.MinCPUCores}
+	}
+	if f.MinCPURAMGB > 0 {
+		q["cpu_ram"] = map[string]interface{}{"gte": f.MinCPURAMGB * 1024}
 	}
 	if len(f.Geolocation) > 0 {
 		q["geolocation"] = map[string]interface{}{"in": f.Geolocation}

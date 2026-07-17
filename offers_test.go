@@ -111,6 +111,35 @@ func TestSearchOffersGPUNamesIn(t *testing.T) {
 	}
 }
 
+func TestSearchOffersCPUFloors(t *testing.T) {
+	ts := newTestServer(t)
+	ts.handleJSON("/api/v0/bundles/", 200, `{"offers": []}`)
+	c := ts.client(t)
+
+	_, err := c.SearchOffers(context.Background(), &vast.OfferFilter{MinCPUCores: 8, MinCPURAMGB: 32})
+	if err != nil {
+		t.Fatalf("SearchOffers: %v", err)
+	}
+	if got := ts.lastBody["cpu_cores_effective"].(map[string]interface{})["gte"]; got != 8.0 {
+		t.Errorf("cpu_cores_effective gte = %v, want 8", got)
+	}
+	if got := ts.lastBody["cpu_ram"].(map[string]interface{})["gte"]; got != 32768.0 {
+		t.Errorf("cpu_ram gte = %v, want 32768 (MB)", got)
+	}
+
+	// Zero floors add no query keys.
+	_, err = c.SearchOffers(context.Background(), &vast.OfferFilter{})
+	if err != nil {
+		t.Fatalf("SearchOffers: %v", err)
+	}
+	if _, present := ts.lastBody["cpu_cores_effective"]; present {
+		t.Error("cpu_cores_effective present without a floor")
+	}
+	if _, present := ts.lastBody["cpu_ram"]; present {
+		t.Error("cpu_ram present without a floor")
+	}
+}
+
 func TestSearchOffersValidation(t *testing.T) {
 	ts := newTestServer(t)
 	c := ts.client(t)
