@@ -29,6 +29,10 @@ type GPUSpec struct {
 	SMCapability int
 	// Consumer is true for GeForce SKUs (no attestation, marketplace boxes).
 	Consumer bool
+	// DeviceName is the CUDA device name the card reports on the box
+	// (nvidia-smi / torch), e.g. "NVIDIA GeForce RTX 4090". Where vast's
+	// gpu_name covers several memory variants it names the common one.
+	DeviceName string
 }
 
 // gpuCatalog is the static SKU table, ordered by fallback preference:
@@ -36,51 +40,54 @@ type GPUSpec struct {
 // the order is directly usable as an offer-search preference chain.
 var gpuCatalog = []GPUSpec{
 	// Consumer 30-series (SM86)
-	{GPUName: "RTX 3060", Slug: "rtx-3060", VRAMGB: 12, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3060 Ti", Slug: "rtx-3060-ti", VRAMGB: 8, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3070", Slug: "rtx-3070", VRAMGB: 8, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3080", Slug: "rtx-3080", VRAMGB: 10, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3080 Ti", Slug: "rtx-3080-ti", VRAMGB: 12, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3090", Slug: "rtx-3090", VRAMGB: 24, SMCapability: 86, Consumer: true},
-	{GPUName: "RTX 3090 Ti", Slug: "rtx-3090-ti", VRAMGB: 24, SMCapability: 86, Consumer: true},
+	{GPUName: "RTX 3060", Slug: "rtx-3060", VRAMGB: 12, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3060"},
+	{GPUName: "RTX 3060 Ti", Slug: "rtx-3060-ti", VRAMGB: 8, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3060 Ti"},
+	{GPUName: "RTX 3070", Slug: "rtx-3070", VRAMGB: 8, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3070"},
+	{GPUName: "RTX 3070 Ti", Slug: "rtx-3070-ti", VRAMGB: 8, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3070 Ti"},
+	{GPUName: "RTX 3080", Slug: "rtx-3080", VRAMGB: 10, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3080"},
+	{GPUName: "RTX 3080 Ti", Slug: "rtx-3080-ti", VRAMGB: 12, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3080 Ti"},
+	{GPUName: "RTX 3090", Slug: "rtx-3090", VRAMGB: 24, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3090"},
+	{GPUName: "RTX 3090 Ti", Slug: "rtx-3090-ti", VRAMGB: 24, SMCapability: 86, Consumer: true, DeviceName: "NVIDIA GeForce RTX 3090 Ti"},
 
 	// Consumer 40-series (SM89). vast abbreviates SUPER as "S"; the device
 	// (and slug) spells it out.
-	{GPUName: "RTX 4060 Ti", Slug: "rtx-4060-ti", VRAMGB: 16, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4070", Slug: "rtx-4070", VRAMGB: 12, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4070S", Slug: "rtx-4070-super", VRAMGB: 12, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4070 Ti", Slug: "rtx-4070-ti", VRAMGB: 12, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4070S Ti", Slug: "rtx-4070-ti-super", VRAMGB: 16, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4080", Slug: "rtx-4080", VRAMGB: 16, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4080S", Slug: "rtx-4080-super", VRAMGB: 16, SMCapability: 89, Consumer: true},
-	{GPUName: "RTX 4090", Slug: "rtx-4090", VRAMGB: 24, SMCapability: 89, Consumer: true},
+	{GPUName: "RTX 4060", Slug: "rtx-4060", VRAMGB: 8, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4060"},
+	{GPUName: "RTX 4060 Ti", Slug: "rtx-4060-ti", VRAMGB: 16, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4060 Ti"},
+	{GPUName: "RTX 4070", Slug: "rtx-4070", VRAMGB: 12, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4070"},
+	{GPUName: "RTX 4070S", Slug: "rtx-4070-super", VRAMGB: 12, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4070 SUPER"},
+	{GPUName: "RTX 4070 Ti", Slug: "rtx-4070-ti", VRAMGB: 12, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4070 Ti"},
+	{GPUName: "RTX 4070S Ti", Slug: "rtx-4070-ti-super", VRAMGB: 16, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4070 Ti SUPER"},
+	{GPUName: "RTX 4080", Slug: "rtx-4080", VRAMGB: 16, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4080"},
+	{GPUName: "RTX 4080S", Slug: "rtx-4080-super", VRAMGB: 16, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4080 SUPER"},
+	{GPUName: "RTX 4090", Slug: "rtx-4090", VRAMGB: 24, SMCapability: 89, Consumer: true, DeviceName: "NVIDIA GeForce RTX 4090"},
 
 	// Consumer 50-series (SM120)
-	{GPUName: "RTX 5060 Ti", Slug: "rtx-5060-ti", VRAMGB: 16, SMCapability: 120, Consumer: true},
-	{GPUName: "RTX 5070", Slug: "rtx-5070", VRAMGB: 12, SMCapability: 120, Consumer: true},
-	{GPUName: "RTX 5070 Ti", Slug: "rtx-5070-ti", VRAMGB: 16, SMCapability: 120, Consumer: true},
-	{GPUName: "RTX 5080", Slug: "rtx-5080", VRAMGB: 16, SMCapability: 120, Consumer: true},
-	{GPUName: "RTX 5090", Slug: "rtx-5090", VRAMGB: 32, SMCapability: 120, Consumer: true},
+	{GPUName: "RTX 5060", Slug: "rtx-5060", VRAMGB: 8, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5060"},
+	{GPUName: "RTX 5060 Ti", Slug: "rtx-5060-ti", VRAMGB: 16, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5060 Ti"},
+	{GPUName: "RTX 5070", Slug: "rtx-5070", VRAMGB: 12, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5070"},
+	{GPUName: "RTX 5070 Ti", Slug: "rtx-5070-ti", VRAMGB: 16, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5070 Ti"},
+	{GPUName: "RTX 5080", Slug: "rtx-5080", VRAMGB: 16, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5080"},
+	{GPUName: "RTX 5090", Slug: "rtx-5090", VRAMGB: 32, SMCapability: 120, Consumer: true, DeviceName: "NVIDIA GeForce RTX 5090"},
 
 	// Workstation
-	{GPUName: "RTX A4000", Slug: "rtx-a4000", VRAMGB: 16, SMCapability: 86},
-	{GPUName: "RTX A5000", Slug: "rtx-a5000", VRAMGB: 24, SMCapability: 86},
-	{GPUName: "RTX A6000", Slug: "rtx-a6000", VRAMGB: 48, SMCapability: 86},
-	{GPUName: "A40", Slug: "a40", VRAMGB: 48, SMCapability: 86},
-	{GPUName: "L40", Slug: "l40", VRAMGB: 48, SMCapability: 89},
-	{GPUName: "L40S", Slug: "l40s", VRAMGB: 48, SMCapability: 89},
-	{GPUName: "RTX 6000Ada", Slug: "rtx-6000-ada-generation", VRAMGB: 48, SMCapability: 89},
-	{GPUName: "RTX PRO 6000", Slug: "rtx-pro-6000-blackwell-workstation-edition", VRAMGB: 96, SMCapability: 120},
+	{GPUName: "RTX A4000", Slug: "rtx-a4000", VRAMGB: 16, SMCapability: 86, DeviceName: "NVIDIA RTX A4000"},
+	{GPUName: "RTX A5000", Slug: "rtx-a5000", VRAMGB: 24, SMCapability: 86, DeviceName: "NVIDIA RTX A5000"},
+	{GPUName: "RTX A6000", Slug: "rtx-a6000", VRAMGB: 48, SMCapability: 86, DeviceName: "NVIDIA RTX A6000"},
+	{GPUName: "A40", Slug: "a40", VRAMGB: 48, SMCapability: 86, DeviceName: "NVIDIA A40"},
+	{GPUName: "L40", Slug: "l40", VRAMGB: 48, SMCapability: 89, DeviceName: "NVIDIA L40"},
+	{GPUName: "L40S", Slug: "l40s", VRAMGB: 48, SMCapability: 89, DeviceName: "NVIDIA L40S"},
+	{GPUName: "RTX 6000Ada", Slug: "rtx-6000-ada-generation", VRAMGB: 48, SMCapability: 89, DeviceName: "NVIDIA RTX 6000 Ada Generation"},
+	{GPUName: "RTX PRO 6000", Slug: "rtx-pro-6000-blackwell-workstation-edition", VRAMGB: 96, SMCapability: 120, DeviceName: "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"},
 
 	// Datacenter accelerators
-	{GPUName: "A100 PCIE", Slug: "a100-80gb-pcie", VRAMGB: 80, SMCapability: 80},
-	{GPUName: "A100 SXM4", Slug: "a100-sxm4-80gb", VRAMGB: 80, SMCapability: 80},
-	{GPUName: "H100 PCIE", Slug: "h100-pcie", VRAMGB: 80, SMCapability: 90},
-	{GPUName: "H100 SXM", Slug: "h100-80gb-hbm3", VRAMGB: 80, SMCapability: 90},
-	{GPUName: "H100 NVL", Slug: "h100-nvl", VRAMGB: 94, SMCapability: 90},
-	{GPUName: "H200", Slug: "h200", VRAMGB: 141, SMCapability: 90},
-	{GPUName: "H200 NVL", Slug: "h200-nvl", VRAMGB: 141, SMCapability: 90},
-	{GPUName: "B200", Slug: "b200", VRAMGB: 180, SMCapability: 100},
+	{GPUName: "A100 PCIE", Slug: "a100-80gb-pcie", VRAMGB: 80, SMCapability: 80, DeviceName: "NVIDIA A100 80GB PCIe"},
+	{GPUName: "A100 SXM4", Slug: "a100-sxm4-80gb", VRAMGB: 80, SMCapability: 80, DeviceName: "NVIDIA A100-SXM4-80GB"},
+	{GPUName: "H100 PCIE", Slug: "h100-pcie", VRAMGB: 80, SMCapability: 90, DeviceName: "NVIDIA H100 PCIe"},
+	{GPUName: "H100 SXM", Slug: "h100-80gb-hbm3", VRAMGB: 80, SMCapability: 90, DeviceName: "NVIDIA H100 80GB HBM3"},
+	{GPUName: "H100 NVL", Slug: "h100-nvl", VRAMGB: 94, SMCapability: 90, DeviceName: "NVIDIA H100 NVL"},
+	{GPUName: "H200", Slug: "h200", VRAMGB: 141, SMCapability: 90, DeviceName: "NVIDIA H200"},
+	{GPUName: "H200 NVL", Slug: "h200-nvl", VRAMGB: 141, SMCapability: 90, DeviceName: "NVIDIA H200 NVL"},
+	{GPUName: "B200", Slug: "b200", VRAMGB: 180, SMCapability: 100, DeviceName: "NVIDIA B200"},
 }
 
 // GPUCatalog returns a copy of the static SKU catalog in fallback
@@ -97,6 +104,18 @@ func GPUSpecByName(name string) (GPUSpec, bool) {
 	name = NormalizeGPUName(name)
 	for _, spec := range gpuCatalog {
 		if strings.EqualFold(spec.GPUName, name) {
+			return spec, true
+		}
+	}
+	return GPUSpec{}, false
+}
+
+// GPUSpecByDeviceName looks up a catalog entry by the CUDA device name the
+// card reports (exact match after trimming).
+func GPUSpecByDeviceName(device string) (GPUSpec, bool) {
+	device = strings.TrimSpace(device)
+	for _, spec := range gpuCatalog {
+		if spec.DeviceName == device {
 			return spec, true
 		}
 	}

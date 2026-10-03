@@ -83,3 +83,19 @@ func TestGPUsWithAtLeast(t *testing.T) {
 		t.Errorf("first = %q, want RTX 4090", got[0].GPUName)
 	}
 }
+
+func TestCatalogDeviceNames(t *testing.T) {
+	seen := map[string]bool{}
+	for _, spec := range vast.GPUCatalog() {
+		if spec.DeviceName == "" || seen[spec.DeviceName] {
+			t.Errorf("%s: device name %q is empty or duplicated", spec.GPUName, spec.DeviceName)
+		}
+		seen[spec.DeviceName] = true
+		if spec.Consumer && vast.SKUSlug(spec.DeviceName) != spec.Slug {
+			t.Errorf("%s: slug %q is not its device name's %q", spec.GPUName, spec.Slug, vast.SKUSlug(spec.DeviceName))
+		}
+		if got, ok := vast.GPUSpecByDeviceName(spec.DeviceName); !ok || got.GPUName != spec.GPUName {
+			t.Errorf("GPUSpecByDeviceName(%q) = %+v %v", spec.DeviceName, got, ok)
+		}
+	}
+}
