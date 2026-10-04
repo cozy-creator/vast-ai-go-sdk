@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -72,6 +74,30 @@ type Instance struct {
 	// StartDate is a unix timestamp (fractional seconds).
 	StartDate   float64 `json:"start_date"`
 	Geolocation string  `json:"geolocation"`
+
+	// Ports maps each exposed container port ("8443/tcp") to its host
+	// bindings on PublicIPAddr.
+	Ports map[string][]PortBinding `json:"ports"`
+}
+
+// PortBinding is one docker host binding of a container port.
+type PortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+// PublicTCPPort answers the host port container TCP port private is mapped
+// to, when vast reports exactly one usable binding.
+func (i Instance) PublicTCPPort(private int) (int, bool) {
+	port := 0
+	for _, binding := range i.Ports[fmt.Sprintf("%d/tcp", private)] {
+		value, err := strconv.Atoi(strings.TrimSpace(binding.HostPort))
+		if err != nil || value <= 0 || value > 65535 || port != 0 && port != value {
+			return 0, false
+		}
+		port = value
+	}
+	return port, port != 0
 }
 
 // StartedAt converts StartDate to a time.Time (zero when unset).

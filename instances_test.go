@@ -153,6 +153,12 @@ func TestGetInstanceEnvelope(t *testing.T) {
 	if got := inst.StartedAt().Year(); got != 2026 {
 		t.Errorf("StartedAt year = %d, want 2026", got)
 	}
+	if port, ok := inst.PublicTCPPort(8443); !ok || port != 41022 {
+		t.Errorf("PublicTCPPort(8443) = %d %v, want 41022", port, ok)
+	}
+	if _, ok := inst.PublicTCPPort(8444); ok {
+		t.Error("an unmapped port read as mapped")
+	}
 }
 
 func TestListInstancesPaginates(t *testing.T) {

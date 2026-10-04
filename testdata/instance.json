@@ -24,6 +24,10 @@
     "inet_up_cost": 0.005,
     "inet_down_cost": 0.005,
     "start_date": 1783562011.4821,
-    "geolocation": "Poland, PL"
+    "geolocation": "Poland, PL",
+    "ports": {
+      "8443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "41022"}, {"HostIp": "::", "HostPort": "41022"}],
+      "22/tcp": [{"HostIp": "0.0.0.0", "HostPort": "41023"}]
+    }
   }
 }

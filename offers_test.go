@@ -155,3 +155,26 @@ func TestSearchOffersValidation(t *testing.T) {
 		t.Fatalf("want ValidationError for bad Type, got %v", err)
 	}
 }
+
+func TestSearchOffersMachineDirectPortsAndStorage(t *testing.T) {
+	ts := newTestServer(t)
+	ts.handleJSON("/api/v0/bundles/", 200, `{"offers": [{"id": 7, "machine_id": 56506, "public_ipaddr": "184.144.152.26", "static_ip": true, "direct_port_count": 124}]}`)
+	c := ts.client(t)
+
+	offers, err := c.SearchOffers(context.Background(), &vast.OfferFilter{MachineID: 56506, MinDirectPorts: 3, AllocatedStorageGB: 100})
+	if err != nil {
+		t.Fatalf("SearchOffers: %v", err)
+	}
+	if got := ts.lastBody["machine_id"].(map[string]interface{})["eq"]; got != 56506.0 {
+		t.Errorf("machine_id eq = %v", got)
+	}
+	if got := ts.lastBody["direct_port_count"].(map[string]interface{})["gte"]; got != 3.0 {
+		t.Errorf("direct_port_count gte = %v", got)
+	}
+	if got := ts.lastBody["allocated_storage"]; got != 100.0 {
+		t.Errorf("allocated_storage = %v", got)
+	}
+	if len(offers) != 1 || offers[0].PublicIPAddr != "184.144.152.26" || !offers[0].StaticIP || offers[0].DirectPortCount != 124 {
+		t.Errorf("offer = %+v", offers)
+	}
+}

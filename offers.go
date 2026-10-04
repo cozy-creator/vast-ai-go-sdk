@@ -79,6 +79,13 @@ type Offer struct {
 	DLPerf      float64 `json:"dlperf"`
 	Rentable    bool    `json:"rentable"`
 	Rented      bool    `json:"rented"`
+
+	// PublicIPAddr is the host's public address; StaticIP says whether it
+	// survives a host restart. DirectPortCount is how many host ports the
+	// machine can map straight to container ports.
+	PublicIPAddr    string `json:"public_ipaddr"`
+	StaticIP        bool   `json:"static_ip"`
+	DirectPortCount int    `json:"direct_port_count"`
 }
 
 // GPURAMGB returns per-GPU VRAM in whole GB.
@@ -143,6 +150,12 @@ type OfferFilter struct {
 	// External, when non-nil, includes/excludes offers outside vast's
 	// standard pool. Defaults to false (exclude) like the vast CLI.
 	External *bool
+	// MachineID restricts the search to one host machine.
+	MachineID int64
+	// MinDirectPorts requires at least this many directly mappable host ports.
+	MinDirectPorts int
+	// AllocatedStorageGB prices DPHTotal with this much disk included.
+	AllocatedStorageGB float64
 }
 
 // buildQuery renders the filter into the POST /api/v0/bundles/ body:
@@ -207,6 +220,15 @@ func (f *OfferFilter) buildQuery() (map[string]interface{}, error) {
 	}
 	if len(f.Geolocation) > 0 {
 		q["geolocation"] = map[string]interface{}{"in": f.Geolocation}
+	}
+	if f.MachineID > 0 {
+		q["machine_id"] = map[string]interface{}{"eq": f.MachineID}
+	}
+	if f.MinDirectPorts > 0 {
+		q["direct_port_count"] = map[string]interface{}{"gte": f.MinDirectPorts}
+	}
+	if f.AllocatedStorageGB > 0 {
+		q["allocated_storage"] = f.AllocatedStorageGB
 	}
 
 	external := false
