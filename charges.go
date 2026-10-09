@@ -26,23 +26,16 @@ const (
 	usdMicrosPerUSD         = 1_000_000
 )
 
-// InstanceChargeItem is one charge type of a contract row: gpu, disk, bwd
-// (bandwidth down) or bwu (bandwidth up), with vast's own description of it.
-type InstanceChargeItem struct {
-	Type            string
-	Description     string
-	AmountUSDMicros int64
-}
-
 // InstanceCharge is vast's charge of one instance contract over the queried
-// UTC days: Start and End are the first and last day it covers. Money is
-// signed integer USD micros decoded from vast's decimal text, never float64.
+// UTC days: Start and End are the first and last day it covers, and the amount
+// is vast's total of its gpu, disk and bandwidth items (kept verbatim in the raw
+// row). Money is signed integer USD micros decoded from vast's decimal text,
+// never float64.
 type InstanceCharge struct {
 	InstanceID      int64
 	Start, End      time.Time
 	Label           string
 	AmountUSDMicros int64
-	Items           []InstanceChargeItem
 }
 
 // InstanceCharges is the evidence of one billing read. NormalizedQuery is the
@@ -89,8 +82,9 @@ func (e *ChargesEvidenceError) Unwrap() error { return e.cause }
 // that [start, end) touches. vast cannot filter charges by instance, so the
 // read walks every instance contract of those days and keeps the instance's
 // rows. A walk that is not complete and consistent (counts that do not add up
-// to the total, contracts out of order, a listing that changed under it) is a
-// plain error: it produced no evidence. An instance absent from a complete
+// to the final total, contracts out of order, a total that fell, pages that do
+// not advance) is a plain error: it produced no evidence. A contract created
+// during the walk has a higher id, so it lands on a later page. An instance absent from a complete
 // walk is an empty read, which is not proof of zero cost.
 func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start, end time.Time) (*InstanceCharges, error) {
 	switch {
@@ -148,11 +142,10 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 		if env.Count == nil || env.Total == nil || env.Results == nil || *env.Count != len(*env.Results) {
 			return nil, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d lacks a consistent count, total and results", page)
 		}
-		if page == 0 {
-			total = *env.Total
-		} else if *env.Total != total {
-			return nil, fmt.Errorf("vast: instance charges changed during the walk: total %d, then %d", total, *env.Total)
+		if *env.Total < total {
+			return nil, fmt.Errorf("vast: instance charges total fell during the walk: %d, then %d", total, *env.Total)
 		}
+		total = *env.Total
 		counted += len(*env.Results)
 		for i, raw := range *env.Results {
 			var row struct {
@@ -176,8 +169,8 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 		if env.NextToken == nil || *env.NextToken == "" {
 			break
 		}
-		if len(*env.Results) == 0 {
-			return nil, fmt.Errorf("vast: instance charges page %d is empty but continues", page)
+		if len(*env.Results) == 0 || *env.NextToken == token {
+			return nil, fmt.Errorf("vast: instance charges page %d does not advance", page)
 		}
 		token = *env.NextToken
 	}
@@ -237,11 +230,6 @@ func decodeInstanceCharge(raw json.RawMessage) (InstanceCharge, ChargesEvidenceE
 		Metadata *struct {
 			Label *string `json:"label"`
 		} `json:"metadata"`
-		Items []struct {
-			Type        *string         `json:"type"`
-			Description *string         `json:"description"`
-			Amount      json.RawMessage `json:"amount"`
-		} `json:"items"`
 	}
 	schema := ChargesEvidenceSchemaAmbiguity
 	if err := json.Unmarshal(raw, &row); err != nil {
@@ -263,31 +251,22 @@ func decodeInstanceCharge(raw json.RawMessage) (InstanceCharge, ChargesEvidenceE
 	if charge.AmountUSDMicros, kind, err = usdMicros(row.Amount); err != nil {
 		return InstanceCharge{}, kind, fmt.Errorf("amount: %w", err)
 	}
-	for i, item := range row.Items {
-		if item.Type == nil || *item.Type == "" {
-			return InstanceCharge{}, schema, fmt.Errorf("item %d has no type", i)
-		}
-		micros, kind, err := usdMicros(item.Amount)
-		if err != nil {
-			return InstanceCharge{}, kind, fmt.Errorf("item %d amount: %w", i, err)
-		}
-		c := InstanceChargeItem{Type: *item.Type, AmountUSDMicros: micros}
-		if item.Description != nil {
-			c.Description = *item.Description
-		}
-		charge.Items = append(charge.Items, c)
-	}
 	return charge, "", nil
 }
 
-// jsonDecimal is a JSON number; the exponent is bounded so big.Rat stays small.
+// jsonDecimal is a JSON number's text; the exponent is bounded so big.Rat stays small.
 var jsonDecimal = regexp.MustCompile(`^-?(0|[1-9][0-9]{0,30})(\.[0-9]{1,30})?([eE][+-]?[0-9]{1,2})?$`)
 
-// usdMicros decodes a JSON number of US dollars exactly. vast documents
-// amounts to three decimals, so a sub-micro amount is a wire it was never
-// verified against and refuses rather than rounds.
+// usdMicros decodes US dollars exactly, from a JSON number or a quoted decimal.
+// vast documents amounts to three decimals, so a sub-micro amount is a wire it
+// was never verified against and refuses rather than rounds.
 func usdMicros(raw json.RawMessage) (int64, ChargesEvidenceErrorKind, error) {
 	text := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(text, `"`) {
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return 0, ChargesEvidenceSchemaAmbiguity, err
+		}
+	}
 	if !jsonDecimal.MatchString(text) {
 		return 0, ChargesEvidenceSchemaAmbiguity, fmt.Errorf("%q is not a JSON number", text)
 	}

@@ -90,8 +90,7 @@ func TestInstanceChargesWalksEveryPageAndKeepsOnlyTheInstanceRowsExactly(t *test
 		t.Fatalf("%+v", got)
 	}
 	r := got.Records[0]
-	if r.InstanceID != 55062389 || !r.Start.Equal(time.Unix(day, 0)) || r.Label != "pr-55062389" || r.AmountUSDMicros != 333_000 ||
-		len(r.Items) != 4 || r.Items[2].Type != "bwd" || r.Items[2].AmountUSDMicros != 206_000 || r.Items[0].Description != "0.202 hours at $0.533/hour" {
+	if r.InstanceID != 55062389 || !r.Start.Equal(time.Unix(day, 0)) || r.Label != "pr-55062389" || r.AmountUSDMicros != 333_000 {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -123,13 +122,13 @@ func TestInstanceChargesAbsentAndZeroAreDifferentEvidence(t *testing.T) {
 	}
 	p = &chargesPeer{pages: []string{page(1, "", chargeRow(8, day, "0.0"))}}
 	zero, err := p.serve(t).GetInstanceCharges(context.Background(), 8, lifeStart, lifeEnd)
-	if err != nil || len(zero.Records) != 1 || zero.Records[0].AmountUSDMicros != 0 || zero.Records[0].Items != nil {
+	if err != nil || len(zero.Records) != 1 || zero.Records[0].AmountUSDMicros != 0 {
 		t.Fatalf("zero: %+v %v", zero, err)
 	}
 }
 
 func TestInstanceChargesKeepsSignAndExactness(t *testing.T) {
-	for amount, micros := range map[string]int64{"-0.5": -500_000, "31.173": 31_173_000, "1e-3": 1_000, "0.000001": 1, "12345678.9": 12_345_678_900_000} {
+	for amount, micros := range map[string]int64{"-0.5": -500_000, "31.173": 31_173_000, "1e-3": 1_000, "0.000001": 1, "12345678.9": 12_345_678_900_000, `"0.5"`: 500_000} {
 		p := &chargesPeer{pages: []string{page(1, "", chargeRow(8, day, amount))}}
 		got, err := p.serve(t).GetInstanceCharges(context.Background(), 8, lifeStart, lifeEnd)
 		if err != nil || got.TotalAmountUSDMicros != micros {
@@ -150,10 +149,9 @@ func TestInstanceChargesRefusals(t *testing.T) {
 		{"overflow", page(1, "", chargeRow(8, day, "10000000000000")), vast.ChargesEvidenceAmountOverflow, "[" + chargeRow(8, day, "10000000000000") + "]"},
 		{"total overflow", page(2, "", chargeRow(8, day, "9000000000000"), chargeRow(8, day+86400, "9000000000000")),
 			vast.ChargesEvidenceAmountOverflow, "[" + chargeRow(8, day, "9000000000000") + "," + chargeRow(8, day+86400, "9000000000000") + "]"},
-		{"quoted amount", page(1, "", chargeRow(8, day, `"0.5"`)), vast.ChargesEvidenceSchemaAmbiguity, "[" + chargeRow(8, day, `"0.5"`) + "]"},
+		{"quoted non-decimal", page(1, "", chargeRow(8, day, `"0.5 USD"`)), vast.ChargesEvidenceSchemaAmbiguity, "[" + chargeRow(8, day, `"0.5 USD"`) + "]"},
+		{"quoted sub-micro", page(1, "", chargeRow(8, day, `"0.0000001"`)), vast.ChargesEvidenceSubmicroAmount, "[" + chargeRow(8, day, `"0.0000001"`) + "]"},
 		{"no amount", page(1, "", malformed), vast.ChargesEvidenceSchemaAmbiguity, "[" + malformed + "]"},
-		{"bad item", page(1, "", chargeRow(8, day, "1", chargeItem("gpu", "", "0.0000001"))), vast.ChargesEvidenceSubmicroAmount,
-			"[" + chargeRow(8, day, "1", chargeItem("gpu", "", "0.0000001")) + "]"},
 		{"repeated day", page(2, "", chargeRow(8, day, "1"), chargeRow(8, day, "1")), vast.ChargesEvidenceSchemaAmbiguity,
 			"[" + chargeRow(8, day, "1") + "," + chargeRow(8, day, "1") + "]"},
 		{"no total", `{"success": true, "count": 0, "results": []}`, vast.ChargesEvidenceSchemaAmbiguity, ""},
@@ -182,10 +180,12 @@ func TestInstanceChargesRefusals(t *testing.T) {
 // A walk that does not add up produced no evidence: a plain error the caller retries.
 func TestInstanceChargesIncompleteWalkIsNoEvidence(t *testing.T) {
 	for name, pages := range map[string][]string{
-		"total moved":       {page(2, "t1", chargeRow(7, day, "1")), page(3, "", chargeRow(8, day, "1"), chargeRow(9, day, "1"))},
-		"short":             {page(3, "t1", chargeRow(7, day, "1")), page(3, "", chargeRow(8, day, "1"))},
-		"out of order":      {page(2, "t1", chargeRow(9, day, "1")), page(2, "", chargeRow(8, day, "1"))},
-		"empty, continuing": {page(1, "t1"), page(1, "", chargeRow(8, day, "1"))},
+		"total fell":            {page(3, "t1", chargeRow(7, day, "1")), page(2, "", chargeRow(8, day, "1"))},
+		"short":                 {page(3, "t1", chargeRow(7, day, "1")), page(3, "", chargeRow(8, day, "1"))},
+		"earlier contract grew": {page(2, "t1", chargeRow(7, day, "1")), page(3, "", chargeRow(8, day, "1"))},
+		"out of order":          {page(2, "t1", chargeRow(9, day, "1")), page(2, "", chargeRow(8, day, "1"))},
+		"empty, continuing":     {page(1, "t1"), page(1, "", chargeRow(8, day, "1"))},
+		"stalled":               {page(3, "t1", chargeRow(7, day, "1")), page(3, "t1", chargeRow(8, day, "1"))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := &chargesPeer{pages: pages}
@@ -195,6 +195,16 @@ func TestInstanceChargesIncompleteWalkIsNoEvidence(t *testing.T) {
 				t.Fatalf("%+v %v", got, err)
 			}
 		})
+	}
+}
+
+// A contract created during the walk has a higher id and lands on a later page: the total
+// grows and the walk still counts every contract.
+func TestInstanceChargesCountsAContractCreatedDuringTheWalk(t *testing.T) {
+	p := &chargesPeer{pages: []string{page(2, "t1", chargeRow(7, day, "1")), page(3, "", chargeRow(8, day, "2"), chargeRow(9, day, "1"))}}
+	got, err := p.serve(t).GetInstanceCharges(context.Background(), 8, lifeStart, lifeEnd)
+	if err != nil || got.TotalAmountUSDMicros != 2_000_000 {
+		t.Fatalf("%+v %v", got, err)
 	}
 }
 
