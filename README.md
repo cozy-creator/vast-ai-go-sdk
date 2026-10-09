@@ -69,6 +69,18 @@ Offers are perishable: an id can be rented out from under you between search
 and create. That returns an error matching `vast.ErrOfferGone` — re-search and
 take the next offer, never retry the same id.
 
+## Billing evidence
+
+`GetInstanceCharges(ctx, instanceID, start, end)` reads vast's own charges of one
+instance (`GET /api/v0/charges/`) over the UTC days `[start, end)` touches: one
+record per contract row, with its gpu/disk/bandwidth items, in signed integer
+USD micros decoded from vast's decimal text (never `float64`). vast cannot filter
+charges by instance, so the read walks every instance contract of those days and
+returns an error unless the walk is complete. `RawResponse` is the instance's rows
+byte-for-byte; an instance missing from the listing reads empty, which is not
+proof of zero cost. Malformed, sub-micro, overflowing or oversized answers are a
+typed `*ChargesEvidenceError` carrying the query and the bytes refused.
+
 ## Lifecycle states
 
 `Instance.ActualStatus`: `loading → running`. Per vast docs, `exited`,

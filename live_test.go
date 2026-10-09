@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -147,4 +148,21 @@ func TestLiveRentDestroy(t *testing.T) {
 		t.Fatalf("GetInstance: %v", err)
 	}
 	t.Logf("instance state: actual=%q status=%q", inst.ActualStatus, inst.StatusMsg)
+}
+
+// TestLiveInstanceCharges reads vast's charges of VAST_LIVE_CHARGES_INSTANCE over the last
+// week, walking the whole account listing.
+func TestLiveInstanceCharges(t *testing.T) {
+	c := liveClient(t)
+	id, err := strconv.ParseInt(os.Getenv("VAST_LIVE_CHARGES_INSTANCE"), 10, 64)
+	if err != nil {
+		t.Skip("VAST_LIVE_CHARGES_INSTANCE not set")
+	}
+	end := time.Now().UTC()
+	charges, err := c.GetInstanceCharges(context.Background(), id, end.Add(-7*24*time.Hour), end)
+	if err != nil {
+		t.Fatalf("GetInstanceCharges: %v", err)
+	}
+	t.Logf("query %s\ntotal %d µUSD over %d record(s)\n%s", charges.NormalizedQuery, charges.TotalAmountUSDMicros,
+		len(charges.Records), charges.RawResponse)
 }
