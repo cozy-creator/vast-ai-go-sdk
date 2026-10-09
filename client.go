@@ -138,19 +138,37 @@ func NewClient(apiKey string, opts ...ClientOption) (*Client, error) {
 // do performs an HTTP request against path (e.g. "/api/v0/bundles/"),
 // marshalling body (when non-nil) as JSON and unmarshalling a 2xx response
 // into out (when non-nil).
+func (c *Client) do(ctx context.Context, method, path string, body, out interface{}, idempotent bool) error {
+	respBody, err := c.send(ctx, method, path, body, idempotent, 0)
+	if err != nil {
+		return err
+	}
+	if out != nil {
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return fmt.Errorf("vast: decode response (%s %s): %w", method, path, err)
+		}
+	}
+	return nil
+}
+
+// errResponseTooLarge is a response body past the caller's bound. It is never retried.
+var errResponseTooLarge = errors.New("vast: response exceeds its bound")
+
+// send performs the request and returns the 2xx response body exactly. A
+// positive limit bounds the body; a longer one is errResponseTooLarge.
 //
 // Retry policy: 429 is retried for every method (the request was rejected
 // before processing), honoring Retry-After. 5xx and transport errors are
 // retried only when idempotent is true — PUT /asks/{id}/ creates an
 // instance and MUST NOT be replayed after an ambiguous failure, while
 // searches, gets, and deletes are safe.
-func (c *Client) do(ctx context.Context, method, path string, body, out interface{}, idempotent bool) error {
+func (c *Client) send(ctx context.Context, method, path string, body interface{}, idempotent bool, limit int) ([]byte, error) {
 	var jsonBody []byte
 	if body != nil {
 		var err error
 		jsonBody, err = json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("vast: marshal request body: %w", err)
+			return nil, fmt.Errorf("vast: marshal request body: %w", err)
 		}
 	}
 
@@ -160,48 +178,51 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			case <-time.After(c.backoff(attempt, retryAfter)):
 			}
 			retryAfter = 0
 		}
 
-		err := c.doOnce(ctx, method, path, jsonBody, out)
+		respBody, err := c.sendOnce(ctx, method, path, jsonBody, limit)
 		if err == nil {
-			return nil
+			return respBody, nil
 		}
 		lastErr = err
+		if errors.Is(err, errResponseTooLarge) {
+			return nil, err
+		}
 
 		var apiErr *APIError
 		if errors.As(err, &apiErr) {
 			retryable := apiErr.StatusCode == http.StatusTooManyRequests ||
 				(idempotent && apiErr.StatusCode >= 500)
 			if !retryable {
-				return err
+				return nil, err
 			}
 			retryAfter = apiErr.RetryAfter
 			continue
 		}
 		if ctx.Err() != nil {
-			return err
+			return nil, err
 		}
 		if !idempotent {
 			// Transport error after the request may have been sent —
 			// ambiguous for a non-idempotent call, surface it.
-			return err
+			return nil, err
 		}
 	}
-	return lastErr
+	return nil, lastErr
 }
 
-func (c *Client) doOnce(ctx context.Context, method, path string, jsonBody []byte, out interface{}) error {
+func (c *Client) sendOnce(ctx context.Context, method, path string, jsonBody []byte, limit int) ([]byte, error) {
 	var reader io.Reader
 	if jsonBody != nil {
 		reader = bytes.NewReader(jsonBody)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
-		return fmt.Errorf("vast: build request: %w", err)
+		return nil, fmt.Errorf("vast: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -216,20 +237,27 @@ func (c *Client) doOnce(ctx context.Context, method, path string, jsonBody []byt
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("vast: %s %s: %w", method, path, err)
+		return nil, fmt.Errorf("vast: %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	var body io.Reader = resp.Body
+	if limit > 0 {
+		body = io.LimitReader(resp.Body, int64(limit)+1)
+	}
+	respBody, err := io.ReadAll(body)
 	if err != nil {
-		return fmt.Errorf("vast: read response: %w", err)
+		return nil, fmt.Errorf("vast: read response: %w", err)
+	}
+	if limit > 0 && len(respBody) > limit {
+		return nil, fmt.Errorf("%w: %s %s is over %d bytes", errResponseTooLarge, method, path, limit)
 	}
 	if c.debug {
 		c.logger.Printf("vast: %s %s -> %d body=%s", method, path, resp.StatusCode, truncate(string(respBody), 2048))
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return newAPIError(resp.StatusCode, resp.Header, respBody)
+		return nil, newAPIError(resp.StatusCode, resp.Header, respBody)
 	}
 
 	// vast sometimes signals failure inside a 200 body: {"success": false, ...}.
@@ -239,19 +267,13 @@ func (c *Client) doOnce(ctx context.Context, method, path string, jsonBody []byt
 		Msg     string `json:"msg"`
 	}
 	if json.Unmarshal(respBody, &envelope) == nil && envelope.Success != nil && !*envelope.Success {
-		return &APIError{
+		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Code:       envelope.Error,
 			Message:    firstNonEmpty(envelope.Msg, envelope.Error, "request failed"),
 		}
 	}
-
-	if out != nil {
-		if err := json.Unmarshal(respBody, out); err != nil {
-			return fmt.Errorf("vast: decode response (%s %s): %w", method, path, err)
-		}
-	}
-	return nil
+	return respBody, nil
 }
 
 // backoff computes the wait before retry attempt n (1-based), honoring a
