@@ -73,7 +73,7 @@ take the next offer, never retry the same id.
 
 `GetInstanceCharges(ctx, instanceID, start, end)` reads vast's own charges of one
 instance (`GET /api/v0/charges/`) over the UTC days `[start, end)` touches: one
-record per contract row, with its gpu/disk/bandwidth items, in signed integer
+record per contract row, its total of gpu, disk and bandwidth, in signed integer
 USD micros decoded from vast's decimal text (never `float64`). vast cannot filter
 charges by instance, so the read walks every instance contract of those days and
 returns an error unless the walk is complete. `RawResponse` is the instance's rows
