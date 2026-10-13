@@ -90,8 +90,23 @@ func TestInstanceChargesWalksEveryPageAndKeepsOnlyTheInstanceRowsExactly(t *test
 		t.Fatalf("%+v", got)
 	}
 	r := got.Records[0]
-	if r.InstanceID != 55062389 || !r.Start.Equal(time.Unix(day, 0)) || r.Label != "pr-55062389" || r.AmountUSDMicros != 333_000 {
+	if r.InstanceID != 55062389 || !r.Start.Equal(time.Unix(day, 0)) || r.Label != "pr-55062389" || r.AmountUSDMicros != 333_000 ||
+		r.BandwidthUSDMicros != 214_000 || got.TotalBandwidthUSDMicros != 214_000 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestInstanceChargesRefusesBandwidthOutsideTheAmount(t *testing.T) {
+	for _, row := range []string{
+		chargeRow(8, day, "0.1", chargeItem("bwd", "9 GB Downloaded at $0.026/GB", "0.234")),
+		chargeRow(8, day, "0.1", chargeItem("bwu", "refund", "-0.01")),
+	} {
+		p := &chargesPeer{pages: []string{page(1, "", row)}}
+		_, err := p.serve(t).GetInstanceCharges(context.Background(), 8, lifeStart, lifeEnd)
+		var refused *vast.ChargesEvidenceError
+		if !errors.As(err, &refused) || refused.Kind != vast.ChargesEvidenceSchemaAmbiguity {
+			t.Fatalf("%s: %v", row, err)
+		}
 	}
 }
 

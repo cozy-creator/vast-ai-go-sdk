@@ -163,6 +163,6 @@ func TestLiveInstanceCharges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetInstanceCharges: %v", err)
 	}
-	t.Logf("query %s\ntotal %d µUSD over %d record(s)\n%s", charges.NormalizedQuery, charges.TotalAmountUSDMicros,
-		len(charges.Records), charges.RawResponse)
+	t.Logf("query %s\ntotal %d µUSD (bandwidth %d) over %d record(s)\n%s", charges.NormalizedQuery,
+		charges.TotalAmountUSDMicros, charges.TotalBandwidthUSDMicros, len(charges.Records), charges.RawResponse)
 }
