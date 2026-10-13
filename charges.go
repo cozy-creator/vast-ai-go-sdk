@@ -27,15 +27,17 @@ const (
 )
 
 // InstanceCharge is vast's charge of one instance contract over the queried
-// UTC days: Start and End are the first and last day it covers, and the amount
-// is vast's total of its gpu, disk and bandwidth items (kept verbatim in the raw
-// row). Money is signed integer USD micros decoded from vast's decimal text,
-// never float64.
+// UTC days: Start and End are the first and last day it covers, the amount is
+// vast's total of its gpu, disk and bandwidth items (kept verbatim in the raw
+// row), and BandwidthUSDMicros is its download (bwd) and upload (bwu) items.
+// Money is signed integer USD micros decoded from vast's decimal text, never
+// float64.
 type InstanceCharge struct {
-	InstanceID      int64
-	Start, End      time.Time
-	Label           string
-	AmountUSDMicros int64
+	InstanceID         int64
+	Start, End         time.Time
+	Label              string
+	AmountUSDMicros    int64
+	BandwidthUSDMicros int64
 }
 
 // InstanceCharges is the evidence of one billing read. NormalizedQuery is the
@@ -44,10 +46,11 @@ type InstanceCharge struct {
 // byte-for-byte as vast sent it; the rest of the account's listing is not
 // evidence about this instance and is not kept. Treat both as immutable.
 type InstanceCharges struct {
-	NormalizedQuery      string
-	RawResponse          []byte
-	Records              []InstanceCharge
-	TotalAmountUSDMicros int64
+	NormalizedQuery         string
+	RawResponse             []byte
+	Records                 []InstanceCharge
+	TotalAmountUSDMicros    int64
+	TotalBandwidthUSDMicros int64
 }
 
 // ChargesEvidenceErrorKind is a stable wire-refusal class callers persist.
@@ -204,6 +207,7 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 			return nil, refuse(ChargesEvidenceAmountOverflow, raw, "instance row %d makes the total overflow", i)
 		}
 		out.TotalAmountUSDMicros += a
+		out.TotalBandwidthUSDMicros += charge.BandwidthUSDMicros
 		out.Records = append(out.Records, charge)
 	}
 	return out, nil
@@ -230,6 +234,10 @@ func decodeInstanceCharge(raw json.RawMessage) (InstanceCharge, ChargesEvidenceE
 		Metadata *struct {
 			Label *string `json:"label"`
 		} `json:"metadata"`
+		Items []struct {
+			Type   string          `json:"type"`
+			Amount json.RawMessage `json:"amount"`
+		} `json:"items"`
 	}
 	schema := ChargesEvidenceSchemaAmbiguity
 	if err := json.Unmarshal(raw, &row); err != nil {
@@ -250,6 +258,20 @@ func decodeInstanceCharge(raw json.RawMessage) (InstanceCharge, ChargesEvidenceE
 	var kind ChargesEvidenceErrorKind
 	if charge.AmountUSDMicros, kind, err = usdMicros(row.Amount); err != nil {
 		return InstanceCharge{}, kind, fmt.Errorf("amount: %w", err)
+	}
+	// Bandwidth is part of the amount: an item outside [0, amount] is a bill this
+	// reader does not understand.
+	for i, item := range row.Items {
+		if item.Type != "bwd" && item.Type != "bwu" {
+			continue
+		}
+		micros, kind, err := usdMicros(item.Amount)
+		if err != nil {
+			return InstanceCharge{}, kind, fmt.Errorf("item %d amount: %w", i, err)
+		}
+		if charge.BandwidthUSDMicros += micros; micros < 0 || charge.BandwidthUSDMicros > charge.AmountUSDMicros {
+			return InstanceCharge{}, schema, fmt.Errorf("bandwidth items exceed the amount or are negative")
+		}
 	}
 	return charge, "", nil
 }
