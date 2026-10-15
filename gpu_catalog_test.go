@@ -18,6 +18,7 @@ func TestSKUSlugVectors(t *testing.T) {
 		"NVIDIA A100-SXM4-80GB":          "a100-sxm4-80gb",
 		"NVIDIA RTX 6000 Ada Generation": "rtx-6000-ada-generation",
 		"NVIDIA H200":                    "h200",
+		"NVIDIA B300 SXM6 AC":            "b300-sxm6-ac",
 		"Tesla V100-SXM2-16GB":           "tesla-v100-sxm2-16gb",
 		"RTX 4090":                       "rtx-4090", // vast gpu_name for consumer cards
 		"":                               "",
@@ -38,6 +39,7 @@ func TestCatalogBridge(t *testing.T) {
 		{"RTX 4070S", "rtx-4070-super"}, // vast abbreviation != naive slug
 		{"H100 SXM", "h100-80gb-hbm3"},  // marketing name != device name
 		{"A100 SXM4", "a100-sxm4-80gb"},
+		{"B300", "b300-sxm6-ac"},
 	} {
 		spec, ok := vast.GPUSpecByName(tc.name)
 		if !ok || spec.Slug != tc.slug {
