@@ -1,6 +1,9 @@
 package vast
 
-import "strings"
+import (
+	"cmp"
+	"strings"
+)
 
 // GPUSpec bridges a vast.ai gpu_name to the cozy platform's canonical SKU
 // slug space (compilecache: python-gen-worker gen_worker.compile_cache
@@ -33,7 +36,22 @@ type GPUSpec struct {
 	// (nvidia-smi / torch), e.g. "NVIDIA GeForce RTX 4090". Where vast's
 	// gpu_name covers several memory variants it names the common one.
 	DeviceName string
+	// CPUArch is the host CPU architecture in vast's spelling (Offer.CPUArch):
+	// CPUArchARM64 for Grace and DGX Spark superchips, else CPUArchAMD64.
+	CPUArch string
+	// MemoryClass is how the GPU reaches host memory: MemoryDiscrete over PCIe,
+	// MemoryCoherent over NVLink-C2C (GH200, GB300), MemoryUnified for one pool (GB10).
+	MemoryClass string
 }
+
+const (
+	CPUArchAMD64 = "amd64"
+	CPUArchARM64 = "arm64"
+
+	MemoryDiscrete = "discrete"
+	MemoryCoherent = "coherent"
+	MemoryUnified  = "unified"
+)
 
 // gpuCatalog is the static SKU table, ordered by fallback preference:
 // cheaper/more-liquid SKUs first (Longtail 2026-07 marketplace survey), so
@@ -89,6 +107,19 @@ var gpuCatalog = []GPUSpec{
 	{GPUName: "H200 NVL", Slug: "h200-nvl", VRAMGB: 141, SMCapability: 90, DeviceName: "NVIDIA H200 NVL"},
 	{GPUName: "B200", Slug: "b200", VRAMGB: 180, SMCapability: 100, DeviceName: "NVIDIA B200"},
 	{GPUName: "B300", Slug: "b300-sxm6-ac", VRAMGB: 288, SMCapability: 103, DeviceName: "NVIDIA B300 SXM6 AC"},
+
+	// Superchips on arm64 hosts: vast lists them only to a search naming cpu_arch arm64, and
+	// reports compute_cap 1000 for GB10 and GB300. GB300's VRAMGB is the 256703 MiB vast reports.
+	{GPUName: "GB10", Slug: "gb10", VRAMGB: 128, SMCapability: 121, DeviceName: "NVIDIA GB10", CPUArch: CPUArchARM64, MemoryClass: MemoryUnified},
+	{GPUName: "GH200 SXM", Slug: "gh200-480gb", VRAMGB: 96, SMCapability: 90, DeviceName: "NVIDIA GH200 480GB", CPUArch: CPUArchARM64, MemoryClass: MemoryCoherent},
+	{GPUName: "GB300", Slug: "gb300", VRAMGB: 251, SMCapability: 103, DeviceName: "NVIDIA GB300", CPUArch: CPUArchARM64, MemoryClass: MemoryCoherent},
+}
+
+func init() {
+	for i := range gpuCatalog {
+		gpuCatalog[i].CPUArch = cmp.Or(gpuCatalog[i].CPUArch, CPUArchAMD64)
+		gpuCatalog[i].MemoryClass = cmp.Or(gpuCatalog[i].MemoryClass, MemoryDiscrete)
+	}
 }
 
 // GPUCatalog returns a copy of the static SKU catalog in fallback
