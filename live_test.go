@@ -70,6 +70,40 @@ func TestLiveSearchOffers(t *testing.T) {
 		offers[0].ID, offers[0].DPHTotal, offers[0].Reliability, offers[0].Geolocation)
 }
 
+// TestLiveSearchArm64 shows vast lists arm64 hosts only to a search that names them, and that
+// every arm64 card it lists today is in the catalog with that arch.
+func TestLiveSearchArm64(t *testing.T) {
+	c := liveClient(t)
+	ctx := context.Background()
+	both, err := c.SearchOffers(ctx, &vast.OfferFilter{CPUArchs: []string{vast.CPUArchAMD64, vast.CPUArchARM64}, Limit: 3000})
+	if err != nil {
+		t.Fatalf("SearchOffers both: %v", err)
+	}
+	plain, err := c.SearchOffers(ctx, &vast.OfferFilter{Limit: 3000})
+	if err != nil {
+		t.Fatalf("SearchOffers default: %v", err)
+	}
+	cards := map[string]int{}
+	for _, o := range plain {
+		if o.CPUArch != vast.CPUArchAMD64 {
+			t.Errorf("default search returned %s host %d", o.CPUArch, o.MachineID)
+		}
+	}
+	for _, o := range both {
+		if o.CPUArch != vast.CPUArchARM64 {
+			continue
+		}
+		cards[o.GPUName]++
+		if spec, ok := vast.GPUSpecByName(o.GPUName); !ok || spec.CPUArch != vast.CPUArchARM64 {
+			t.Errorf("arm64 card %q (%v MB) is not a catalog arm64 card", o.GPUName, o.GPURAMMB)
+		}
+	}
+	if len(cards) == 0 {
+		t.Fatal("no arm64 offers; vast listed 27 on 2026-10-16")
+	}
+	t.Logf("arm64 offers by card: %v (default search: %d, both: %d)", cards, len(plain), len(both))
+}
+
 func TestLiveListInstances(t *testing.T) {
 	c := liveClient(t)
 	instances, err := c.ListInstances(context.Background())

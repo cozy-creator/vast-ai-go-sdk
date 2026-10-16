@@ -178,3 +178,28 @@ func TestSearchOffersMachineDirectPortsAndStorage(t *testing.T) {
 		t.Errorf("offer = %+v", offers)
 	}
 }
+
+func TestSearchOffersCPUArchs(t *testing.T) {
+	ts := newTestServer(t)
+	ts.handleJSON("/api/v0/bundles/", 200, `{"offers": [{"id": 9, "gpu_name": "GB10", "num_gpus": 1, "gpu_ram": 121856, "compute_cap": 1000, "cpu_arch": "arm64"}]}`)
+	c := ts.client(t)
+
+	offers, err := c.SearchOffers(context.Background(), &vast.OfferFilter{CPUArchs: []string{vast.CPUArchAMD64, vast.CPUArchARM64}})
+	if err != nil {
+		t.Fatalf("SearchOffers: %v", err)
+	}
+	in := ts.lastBody["cpu_arch"].(map[string]interface{})["in"].([]interface{})
+	if len(in) != 2 || in[0] != "amd64" || in[1] != "arm64" {
+		t.Errorf("cpu_arch in = %v", in)
+	}
+	if len(offers) != 1 || offers[0].CPUArch != vast.CPUArchARM64 || offers[0].SKUSlug() != "gb10" {
+		t.Errorf("offers = %+v", offers)
+	}
+
+	if _, err = c.SearchOffers(context.Background(), &vast.OfferFilter{}); err != nil {
+		t.Fatalf("SearchOffers: %v", err)
+	}
+	if _, present := ts.lastBody["cpu_arch"]; present {
+		t.Error("cpu_arch present without CPUArchs")
+	}
+}

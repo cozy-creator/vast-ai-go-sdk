@@ -113,6 +113,10 @@ vast.SKUSlug("NVIDIA H100 80GB HBM3")       // byte-compatible slugifier for dev
 Catalog order is fallback preference (cheapest/most-liquid first), mirroring
 runpod-go-sdk's `GPUSpec` catalog so SKU pinning is identical across providers.
 
+Each card states its host `CPUArch` and `MemoryClass`. GB10 (unified), GH200 SXM and GB300
+(coherent) run on arm64 hosts, which vast lists only to a search that names them:
+`OfferFilter{CPUArchs: []string{vast.CPUArchAMD64, vast.CPUArchARM64}}`.
+
 ## Testing
 
 ```bash

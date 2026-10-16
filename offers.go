@@ -32,6 +32,7 @@ type Offer struct {
 	GPURAMMB   float64 `json:"gpu_ram"` // per-GPU VRAM in MB
 	GPUArch    string  `json:"gpu_arch"`
 	ComputeCap int     `json:"compute_cap"` // SM capability x10 (86, 89, 120)
+	CPUArch    string  `json:"cpu_arch"`    // CPUArchAMD64 or CPUArchARM64
 
 	// DPHTotal is the on-demand $/hr for the whole offer (all GPUs).
 	DPHTotal float64 `json:"dph_total"`
@@ -156,6 +157,8 @@ type OfferFilter struct {
 	MinDirectPorts int
 	// AllocatedStorageGB prices DPHTotal with this much disk included.
 	AllocatedStorageGB float64
+	// CPUArchs are the host architectures searched; empty is vast's default, amd64 only.
+	CPUArchs []string
 }
 
 // buildQuery renders the filter into the POST /api/v0/bundles/ body:
@@ -229,6 +232,9 @@ func (f *OfferFilter) buildQuery() (map[string]interface{}, error) {
 	}
 	if f.AllocatedStorageGB > 0 {
 		q["allocated_storage"] = f.AllocatedStorageGB
+	}
+	if len(f.CPUArchs) > 0 {
+		q["cpu_arch"] = map[string]interface{}{"in": f.CPUArchs}
 	}
 
 	external := false

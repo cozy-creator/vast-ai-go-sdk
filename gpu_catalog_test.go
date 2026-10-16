@@ -40,6 +40,9 @@ func TestCatalogBridge(t *testing.T) {
 		{"H100 SXM", "h100-80gb-hbm3"},  // marketing name != device name
 		{"A100 SXM4", "a100-sxm4-80gb"},
 		{"B300", "b300-sxm6-ac"},
+		{"GB10", "gb10"},
+		{"GH200 SXM", "gh200-480gb"},
+		{"GB300", "gb300"},
 	} {
 		spec, ok := vast.GPUSpecByName(tc.name)
 		if !ok || spec.Slug != tc.slug {
@@ -99,5 +102,24 @@ func TestCatalogDeviceNames(t *testing.T) {
 		if got, ok := vast.GPUSpecByDeviceName(spec.DeviceName); !ok || got.GPUName != spec.GPUName {
 			t.Errorf("GPUSpecByDeviceName(%q) = %+v %v", spec.DeviceName, got, ok)
 		}
+	}
+}
+
+func TestCatalogArchAndMemory(t *testing.T) {
+	superchips := map[string]string{"GB10": vast.MemoryUnified, "GH200 SXM": vast.MemoryCoherent, "GB300": vast.MemoryCoherent}
+	for _, spec := range vast.GPUCatalog() {
+		arch, memory := vast.CPUArchAMD64, vast.MemoryDiscrete
+		if class, ok := superchips[spec.GPUName]; ok {
+			arch, memory = vast.CPUArchARM64, class
+		}
+		if spec.CPUArch != arch || spec.MemoryClass != memory {
+			t.Errorf("%s: arch %q memory %q, want %q %q", spec.GPUName, spec.CPUArch, spec.MemoryClass, arch, memory)
+		}
+		if spec.Slug != vast.SKUSlug(spec.DeviceName) && !spec.Consumer {
+			t.Errorf("%s: slug %q is not its device name's %q", spec.GPUName, spec.Slug, vast.SKUSlug(spec.DeviceName))
+		}
+	}
+	if spec, _ := vast.GPUSpecByName("GB10"); spec.SMCapability != 121 {
+		t.Errorf("GB10 is sm121 whatever vast's compute_cap says, got %d", spec.SMCapability)
 	}
 }
