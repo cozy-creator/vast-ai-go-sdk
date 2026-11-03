@@ -90,15 +90,42 @@ func (e *ChargesEvidenceError) Unwrap() error { return e.cause }
 // during the walk has a higher id, so it lands on a later page. An instance absent from a complete
 // walk is an empty read, which is not proof of zero cost.
 func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start, end time.Time) (*InstanceCharges, error) {
-	switch {
-	case instanceID <= 0:
+	if instanceID <= 0 {
 		return nil, &ValidationError{Field: "instanceID", Message: "must be positive"}
+	}
+	rows, query, err := c.walkCharges(ctx, start, end, func(id int64) bool { return id == instanceID })
+	if err != nil {
+		return nil, err
+	}
+	return decodeInstanceCharges(query, rows[instanceID])
+}
+
+// GetAccountCharges reads vast's charges of every instance contract over the UTC days that
+// [start, end) touches, in the one walk GetInstanceCharges makes of the same listing. A contract
+// with no row is absent from the answer, which is not proof of zero cost.
+func (c *Client) GetAccountCharges(ctx context.Context, start, end time.Time) (map[int64]*InstanceCharges, error) {
+	rows, query, err := c.walkCharges(ctx, start, end, func(int64) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*InstanceCharges, len(rows))
+	for id, raw := range rows {
+		if out[id], err = decodeInstanceCharges(query, raw); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// walkCharges walks every instance contract of the days and keeps the rows of those keep names.
+func (c *Client) walkCharges(ctx context.Context, start, end time.Time, keep func(int64) bool) (map[int64][]json.RawMessage, string, error) {
+	switch {
 	case start.IsZero() || !isUTC(start):
-		return nil, &ValidationError{Field: "start", Message: "must be a nonzero UTC time"}
+		return nil, "", &ValidationError{Field: "start", Message: "must be a nonzero UTC time"}
 	case end.IsZero() || !isUTC(end):
-		return nil, &ValidationError{Field: "end", Message: "must be a nonzero UTC time"}
+		return nil, "", &ValidationError{Field: "end", Message: "must be a nonzero UTC time"}
 	case !end.After(start):
-		return nil, &ValidationError{Field: "end", Message: "must be after start"}
+		return nil, "", &ValidationError{Field: "end", Message: "must be after start"}
 	}
 	first := floorDay(start.Unix())
 	last := floorDay(end.Add(-time.Nanosecond).Unix()) + secondsPerDay - 1
@@ -113,13 +140,13 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 		return &ChargesEvidenceError{Kind: kind, NormalizedQuery: query,
 			RawResponse: append([]byte{}, raw...), cause: fmt.Errorf(format, args...)}
 	}
-	var rows []json.RawMessage
+	rows := map[int64][]json.RawMessage{}
 	var token string
 	var total, counted, budget = 0, 0, maxChargesResponseBytes
 	lastID := int64(0)
 	for page := 0; ; page++ {
 		if page == maxChargesPages || budget <= 0 {
-			return nil, refuse(ChargesEvidenceResponseTooLarge, nil, "walk exceeds %d pages or %d bytes", maxChargesPages, maxChargesResponseBytes)
+			return nil, query, refuse(ChargesEvidenceResponseTooLarge, nil, "walk exceeds %d pages or %d bytes", maxChargesPages, maxChargesResponseBytes)
 		}
 		path := chargesPath + "?" + query
 		if token != "" {
@@ -127,10 +154,10 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 		}
 		body, err := c.send(ctx, http.MethodGet, path, nil, true, budget)
 		if errors.Is(err, errResponseTooLarge) {
-			return nil, refuse(ChargesEvidenceResponseTooLarge, nil, "walk exceeds %d bytes", maxChargesResponseBytes)
+			return nil, query, refuse(ChargesEvidenceResponseTooLarge, nil, "walk exceeds %d bytes", maxChargesResponseBytes)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("vast: get instance charges: %w", err)
+			return nil, query, fmt.Errorf("vast: get instance charges: %w", err)
 		}
 		budget -= len(body)
 		var env struct {
@@ -140,13 +167,13 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 			Results   *[]json.RawMessage `json:"results"`
 		}
 		if err := json.Unmarshal(body, &env); err != nil {
-			return nil, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d: %v", page, err)
+			return nil, query, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d: %v", page, err)
 		}
 		if env.Count == nil || env.Total == nil || env.Results == nil || *env.Count != len(*env.Results) {
-			return nil, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d lacks a consistent count, total and results", page)
+			return nil, query, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d lacks a consistent count, total and results", page)
 		}
 		if *env.Total < total {
-			return nil, fmt.Errorf("vast: instance charges total fell during the walk: %d, then %d", total, *env.Total)
+			return nil, query, fmt.Errorf("vast: instance charges total fell during the walk: %d, then %d", total, *env.Total)
 		}
 		total = *env.Total
 		counted += len(*env.Results)
@@ -159,28 +186,36 @@ func (c *Client) GetInstanceCharges(ctx context.Context, instanceID int64, start
 				id, ok = instanceSource(*row.Source)
 			}
 			if !ok {
-				return nil, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d row %d names no instance contract", page, i)
+				return nil, query, refuse(ChargesEvidenceSchemaAmbiguity, body, "page %d row %d names no instance contract", page, i)
 			}
 			if id < lastID {
-				return nil, fmt.Errorf("vast: instance charges out of contract order: %d after %d", id, lastID)
+				return nil, query, fmt.Errorf("vast: instance charges out of contract order: %d after %d", id, lastID)
 			}
 			lastID = id
-			if id == instanceID {
-				rows = append(rows, raw)
+			if keep(id) {
+				rows[id] = append(rows[id], raw)
 			}
 		}
 		if env.NextToken == nil || *env.NextToken == "" {
 			break
 		}
 		if len(*env.Results) == 0 || *env.NextToken == token {
-			return nil, fmt.Errorf("vast: instance charges page %d does not advance", page)
+			return nil, query, fmt.Errorf("vast: instance charges page %d does not advance", page)
 		}
 		token = *env.NextToken
 	}
 	if counted != total {
-		return nil, fmt.Errorf("vast: instance charges walk read %d of %d contracts", counted, total)
+		return nil, query, fmt.Errorf("vast: instance charges walk read %d of %d contracts", counted, total)
 	}
+	return rows, query, nil
+}
 
+// decodeInstanceCharges makes one instance's rows of a walk its evidence.
+func decodeInstanceCharges(query string, rows []json.RawMessage) (*InstanceCharges, error) {
+	refuse := func(kind ChargesEvidenceErrorKind, raw []byte, format string, args ...any) error {
+		return &ChargesEvidenceError{Kind: kind, NormalizedQuery: query,
+			RawResponse: append([]byte{}, raw...), cause: fmt.Errorf(format, args...)}
+	}
 	var buf bytes.Buffer
 	buf.WriteByte('[')
 	for i, r := range rows {
