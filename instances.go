@@ -58,6 +58,12 @@ type Instance struct {
 	NumGPUs  int     `json:"num_gpus"`
 	GPURAMMB float64 `json:"gpu_ram"`
 	GPUUtil  float64 `json:"gpu_util"`
+	// CPUUtil is the instance's CPU use as the host last reported it; nil when vast sends none.
+	CPUUtil *float64 `json:"cpu_util"`
+	// InetUpBilled and InetDownBilled are the instance's network traffic out and in so far, as vast bills it, in vast's unit;
+	// nil when vast sends none.
+	InetUpBilled   *float64 `json:"inet_up_billed"`
+	InetDownBilled *float64 `json:"inet_down_billed"`
 
 	// DPHTotal is the effective $/hr being billed for compute.
 	DPHTotal    float64 `json:"dph_total"`
